@@ -33,10 +33,11 @@ import com.nadeem.rcaudio.service.CommentaryService
 import com.nadeem.rcaudio.service.KeepAlive
 
 /**
- * Owns the floating buttons. Two small windows are drawn over other apps:
- *  - the main bar (top-left by default): handle, fold, P, T, R and 0 / 1 / 2 / E;
+ * Owns the floating buttons. Three small windows are drawn over other apps:
+ *  - the control bar (top-left by default): handle, fold, P, T and R;
+ *  - the event bar below it: handle and 0 / 1 / 2 / E;
  *  - the quick column (right edge, thumb reach): 4, 6 and W (with the wicket choices opening to its left).
- * Both can be dragged by their handle. A tap goes straight to [CommentaryService];
+ * Each window can be dragged by its handle. A tap goes straight to [CommentaryService];
  * nothing here reads or touches the game.
  */
 class FloatingOverlayService : Service() {
@@ -52,6 +53,7 @@ class FloatingOverlayService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var menu: OverlayMenuState
     private var mainWindow: OverlayWindow? = null
+    private var actionsWindow: OverlayWindow? = null
     private var quickWindow: OverlayWindow? = null
     private var actionButtonsRow: View? = null
     private var extrasRow: LinearLayout? = null
@@ -62,7 +64,7 @@ class FloatingOverlayService : Service() {
     private var expandedOnlyControls: List<View> = emptyList()
 
     private val windows: List<OverlayWindow>
-        get() = listOfNotNull(mainWindow, quickWindow)
+        get() = listOfNotNull(mainWindow, actionsWindow, quickWindow)
 
     private val collapseExtras = Runnable {
         if (menu.closeExtrasIfTimedOut(SystemClock.elapsedRealtime())) {
@@ -135,6 +137,8 @@ class FloatingOverlayService : Service() {
         super.onConfigurationChanged(newConfig)
         // Game rotated or the display size changed: a saved position may now be off screen.
         mainWindow?.view?.post { clampToScreen() }
+        actionsWindow?.view?.post { clampToScreen() }
+        quickWindow?.view?.post { clampToScreen() }
     }
 
     override fun onDestroy() {
@@ -147,6 +151,7 @@ class FloatingOverlayService : Service() {
             }
         }
         mainWindow = null
+        actionsWindow = null
         quickWindow = null
         running = false
         // If we are being torn down while the user still wants the buttons, come back.
@@ -231,27 +236,32 @@ class FloatingOverlayService : Service() {
         gravity = Gravity.TOP or (if (fromEnd) Gravity.END else Gravity.START)
         this.x = x
         this.y = y
-        alpha = BAR_ALPHA
     }
 
     private fun showBars() {
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         menu = OverlayMenuState(initiallyExpanded = prefs.getBoolean(KEY_EXPANDED, false))
         if (prefs.getInt(KEY_LAYOUT, 1) < LAYOUT_VERSION) {
-            // New split layout: forget the old centred position so the new defaults apply once.
-            prefs.edit().remove(KEY_X).remove(KEY_Y).remove(KEY_QUICK_X).remove(KEY_QUICK_Y)
+            // New split layout: forget old positions so the separated windows use their defaults once.
+            prefs.edit().remove(KEY_X).remove(KEY_Y)
+                .remove(KEY_ACTION_X).remove(KEY_ACTION_Y)
+                .remove(KEY_QUICK_X).remove(KEY_QUICK_Y)
                 .putInt(KEY_LAYOUT, LAYOUT_VERSION).apply()
         }
 
         val main = buildMainWindow(prefs)
+        val actions = buildActionsWindow(prefs)
         val quick = buildQuickWindow(prefs)
         mainWindow = main
+        actionsWindow = actions
         quickWindow = quick
         updateExpandedViews()
 
         try {
             windowManager.addView(main.view, main.params)
             main.addedAtMs = SystemClock.elapsedRealtime()
+            windowManager.addView(actions.view, actions.params)
+            actions.addedAtMs = SystemClock.elapsedRealtime()
             windowManager.addView(quick.view, quick.params)
             quick.addedAtMs = SystemClock.elapsedRealtime()
             running = true
@@ -273,6 +283,7 @@ class FloatingOverlayService : Service() {
             }
         }
         mainWindow = null
+        actionsWindow = null
         quickWindow = null
     }
 
@@ -281,22 +292,20 @@ class FloatingOverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             visibility = View.GONE
             this.gravity = gravity
-            background = rounded(Color.parseColor("#442A3740"), dp(10).toFloat())
             buttons.forEach { addView(buttonView(it, wide = wide)) }
         }
 
-    /** Main bar: handle, fold, P, T, R, then 0 / 1 / 2 / E and the E / T / 0 submenus. */
+    /** Control bar: handle, fold, P, T and R. */
     private fun buildMainWindow(prefs: SharedPreferences): OverlayWindow {
         val params = newParams(fromEnd = false, x = prefs.getInt(KEY_X, dp(8)), y = prefs.getInt(KEY_Y, dp(4)))
-        val window = OverlayWindow(barContainer(LinearLayout.VERTICAL), params, fromEnd = false)
+        val window = OverlayWindow(barContainer(LinearLayout.HORIZONTAL), params, fromEnd = false)
 
         val controlRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = rounded(Color.parseColor("#442A3740"), dp(10).toFloat())
         }
         controlRow.addView(dragHandle(window, prefs, KEY_X, KEY_Y, size = dp(32), height = dp(32)))
-        foldToggle = cell("", Color.TRANSPARENT, size = dp(32)).apply {
+        foldToggle = cell("", size = dp(32)).apply {
             contentDescription = "Expand event buttons"
             setOnClickListener { toggleExpanded(prefs) }
         }
@@ -307,12 +316,23 @@ class FloatingOverlayService : Service() {
         controlRow.addView(tossButton)
         controlRow.addView(refreshmentButton)
         expandedOnlyControls = listOf(tossButton, refreshmentButton)
+        window.view.addView(controlRow)
+        return window
+    }
 
+    /** Event buttons and their menus live in a separate, independently movable window. */
+    private fun buildActionsWindow(prefs: SharedPreferences): OverlayWindow {
+        val params = newParams(
+            fromEnd = false,
+            x = prefs.getInt(KEY_ACTION_X, dp(8)),
+            y = prefs.getInt(KEY_ACTION_Y, dp(40)),
+        )
+        val window = OverlayWindow(barContainer(LinearLayout.VERTICAL), params, fromEnd = false)
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            background = rounded(Color.parseColor("#442A3740"), dp(10).toFloat())
+            gravity = Gravity.CENTER_VERTICAL
         }
+        actions.addView(dragHandle(window, prefs, KEY_ACTION_X, KEY_ACTION_Y, size = dp(24), height = dp(40)))
         OverlayButton.mainRow.forEach {
             actions.addView(buttonView(it, size = dp(48), height = dp(44)))
         }
@@ -323,7 +343,6 @@ class FloatingOverlayService : Service() {
         dotRow = submenuRow(Gravity.CENTER, wide = true, buttons = OverlayButton.dotRow)
 
         window.view.apply {
-            addView(controlRow)
             addView(actions)
             addView(extrasRow)
             addView(tossRow)
@@ -348,7 +367,6 @@ class FloatingOverlayService : Service() {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
             gravity = Gravity.CENTER
-            background = rounded(Color.parseColor("#442A3740"), dp(10).toFloat())
             OverlayButton.wicketRow.forEach { addView(buttonView(it, wide = true, height = dp(40))) }
         }
         wicketColumn = wicket
@@ -356,7 +374,6 @@ class FloatingOverlayService : Service() {
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            background = rounded(Color.parseColor("#442A3740"), dp(10).toFloat())
         }
         column.addView(dragHandle(window, prefs, KEY_QUICK_X, KEY_QUICK_Y, size = dp(52), height = dp(20)))
         OverlayButton.quickRow.forEachIndexed { index, button ->
@@ -373,8 +390,29 @@ class FloatingOverlayService : Service() {
 
     private fun barContainer(orientation: Int) = LinearLayout(this).apply {
         this.orientation = orientation
-        background = rounded(Color.parseColor("#CC111111"), dp(12).toFloat())
-        setPadding(dp(4), dp(4), dp(4), dp(4))
+        // Frosted-glass panel: a very faint white sheen with a thin bright rim, so the game stays visible through it.
+        background = glassDrawable(
+            radius = dp(16),
+            colors = intArrayOf(GLASS_PANEL_TOP, GLASS_PANEL_BOTTOM),
+            strokeColor = GLASS_RIM,
+        )
+        setPadding(dp(3), dp(3), dp(3), dp(3))
+    }
+
+    private fun glassDrawable(radius: Int, colors: IntArray, strokeColor: Int): GradientDrawable =
+        GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius.toFloat()
+            setStroke(dp(1).coerceAtLeast(1), strokeColor)
+        }
+
+    /** Each button gets its own barely-there glass tint so 4 / 6 / W / P stay recognisable at a glance. */
+    private fun tintFor(button: OverlayButton): Int = when (button) {
+        OverlayButton.FOUR -> GLASS_TINT_BLUE
+        OverlayButton.SIX -> GLASS_TINT_GREEN
+        OverlayButton.WICKET -> GLASS_TINT_RED
+        OverlayButton.STOP -> GLASS_TINT_AMBER
+        else -> GLASS_CELL
     }
 
     private fun dragHandle(
@@ -385,7 +423,7 @@ class FloatingOverlayService : Service() {
         size: Int,
         height: Int,
     ): View {
-        val handle = cell("\u2261", Color.parseColor("#55FFFFFF"), size = size, height = height)
+        val handle = cell("\u2261", size = size, height = height)
         var startX = 0
         var startY = 0
         var touchX = 0f
@@ -427,7 +465,7 @@ class FloatingOverlayService : Service() {
         size: Int = if (wide) dp(58) else dp(36),
         height: Int = dp(32),
     ): View {
-        val view = cell(button.label, Color.TRANSPARENT, size = size, height = height)
+        val view = cell(button.label, size = size, height = height, tint = tintFor(button))
         view.contentDescription = when (button) {
             OverlayButton.WICKET -> "Wicket audio choices"
             OverlayButton.DOT -> "Dot ball audio choices"
@@ -463,17 +501,19 @@ class FloatingOverlayService : Service() {
             text = if (menu.expanded) "\u2212" else "+"
             contentDescription = if (menu.expanded) "Collapse event buttons" else "Expand event buttons"
         }
-        // Expanding makes the bar wider/taller; keep it fully on screen.
+        // Expanding changes the event window size; keep both windows fully on screen.
         mainWindow?.view?.post { clampToScreen() }
+        actionsWindow?.view?.post { clampToScreen() }
     }
 
     private fun updateSubmenuViews() {
         extrasRow?.visibility = if (menu.expanded && menu.extrasOpen) View.VISIBLE else View.GONE
         tossRow?.visibility = if (menu.expanded && menu.tossOpen) View.VISIBLE else View.GONE
         dotRow?.visibility = if (menu.expanded && menu.dotOpen) View.VISIBLE else View.GONE
-        // The wicket choices belong to the quick column, which works even when the main bar is folded.
+        // The wicket choices belong to the quick column, which works even when the event bar is folded.
         wicketColumn?.visibility = if (menu.wicketOpen) View.VISIBLE else View.GONE
-        mainWindow?.view?.post { clampToScreen() }
+        actionsWindow?.view?.post { clampToScreen() }
+        quickWindow?.view?.post { clampToScreen() }
     }
 
     private fun onButtonTapped(button: OverlayButton, view: View) {
@@ -525,23 +565,24 @@ class FloatingOverlayService : Service() {
         view.postDelayed({ view.alpha = 1f }, 140)
     }
 
-    private fun cell(text: String, color: Int, size: Int, height: Int = dp(32)): TextView =
+    private fun cell(text: String, size: Int, height: Int = dp(32), tint: Int = GLASS_CELL): TextView =
         TextView(this).apply {
             this.text = text
             setTextColor(Color.WHITE)
+            // A soft shadow keeps white text readable over bright parts of the game.
+            setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), 0xB3000000.toInt())
             textSize = if (text.length > 3) 11f else if (height > dp(40)) 18f else 13f
             gravity = Gravity.CENTER
             typeface = android.graphics.Typeface.DEFAULT_BOLD
-            background = rounded(color, dp(8).toFloat())
+            background = glassDrawable(
+                radius = dp(12),
+                colors = intArrayOf(tint, tint),
+                strokeColor = GLASS_CELL_RIM,
+            )
             layoutParams = LinearLayout.LayoutParams(size, height).apply {
-                setMargins(dp(1), dp(1), dp(1), dp(1))
+                setMargins(dp(2), dp(2), dp(2), dp(2))
             }
         }
-
-    private fun rounded(color: Int, radius: Float) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = radius
-    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
@@ -584,14 +625,26 @@ class FloatingOverlayService : Service() {
         private const val KEY_Y = "y"
         private const val KEY_QUICK_X = "quick_x"
         private const val KEY_QUICK_Y = "quick_y"
+        private const val KEY_ACTION_X = "action_x"
+        private const val KEY_ACTION_Y = "action_y"
         private const val KEY_LAYOUT = "layout_version"
-        private const val LAYOUT_VERSION = 3
+        private const val LAYOUT_VERSION = 4
         private const val KEY_EXPANDED = "expanded"
-        private const val BAR_ALPHA = 0.8f
         private const val EXTRAS_TIMEOUT_MS = OverlayMenuState.DEFAULT_EXTRAS_TIMEOUT_MS
         private const val WATCHDOG_INTERVAL_MS = 4_000L
         private const val ATTACH_GRACE_MS = 1_500L
         private const val TAG = "RCOverlay"
+
+        // Glass palette (ARGB). Alphas are deliberately tiny: the panels should look like frosted glass, not plastic.
+        private const val GLASS_PANEL_TOP = 0x2EFFFFFF
+        private const val GLASS_PANEL_BOTTOM = 0x0AFFFFFF
+        private const val GLASS_RIM = 0x47FFFFFF
+        private const val GLASS_CELL = 0x14FFFFFF
+        private const val GLASS_CELL_RIM = 0x26FFFFFF
+        private const val GLASS_TINT_BLUE = 0x3329B6F6
+        private const val GLASS_TINT_GREEN = 0x3366BB6A
+        private const val GLASS_TINT_RED = 0x33EF5350
+        private const val GLASS_TINT_AMBER = 0x33FFCA28
 
         fun isEnabled(context: Context): Boolean =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

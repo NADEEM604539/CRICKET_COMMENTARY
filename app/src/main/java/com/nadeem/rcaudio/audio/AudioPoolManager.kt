@@ -152,7 +152,7 @@ class AudioPoolManager(context: Context) {
         private const val MAX_COMMENTATOR_NAME = 40
         private val lock = Any()
 
-        const val MAX_CLIPS_PER_EVENT = 20
+        const val MAX_CLIPS_PER_EVENT = 40
     }
 }
 

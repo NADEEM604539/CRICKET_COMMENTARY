@@ -55,9 +55,10 @@ fun OverlayControlCard() {
         ) {
             Text("Floating event buttons", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Compact mode keeps only the handle, fold toggle, and P stop control. Expand for two rows: " +
-                    "P / T / R above and 0 1 2 4 6 W E below. 0 opens Pitched Up / Bouncer dot-ball choices; " +
-                    "W opens Run / Bowl / Catch / LBW choices; E opens extras.",
+                "The controls and event buttons are separate, text-only floating groups. Compact mode keeps " +
+                    "the handle, fold toggle, and P stop control. Expand for T / R and 0 / 1 / 2 / E; " +
+                    "4 / 6 / W stay in their own group. Drag each group's handle to move it. 0 opens " +
+                    "Pitched Up / Bouncer choices, W opens Run / Bowl / Catch / LBW choices, and E opens extras.",
             )
             if (!canDraw) {
                 Button(onClick = {
@@ -90,7 +91,7 @@ fun OverlayControlCard() {
             }
             Text(
                 "Drag the \u2261 handle to move the bar. Expanded/collapsed mode and position are remembered. " +
-                    "The bar is restored when you reopen the app. Import up to 20 clips for each category below first. " +
+                    "The bar is restored when you reopen the app. Import up to 40 clips for each category in Audio library. " +
                     "A selection stops the old clip even when its pool is empty.",
                 style = MaterialTheme.typography.bodySmall,
             )

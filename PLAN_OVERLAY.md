@@ -10,15 +10,15 @@ modifies the game, so there is no anti-cheat exposure from our side.
 - Account safety first. Test in an offline/practice match before relying on it.
 
 ## Button design
-Compact row: drag handle, expand/collapse, `P` (always visible).
-Expanded overlay uses two compact, aligned rows:
-- Upper controls: drag handle, fold toggle, `P`, `T`, `R`.
-- Lower event row: `0` `1` `2` `4` `6` `W` `E`.
+The overlay uses separate, transparent, independently movable text-button groups:
+- Control row: drag handle, expand/collapse, `P` (always visible); expanded mode adds `T` and `R`.
+- Event row: drag handle and `0` `1` `2` `E`.
+- Quick column: drag handle and `4` `6` `W`.
 
-The bar is foldable:
+The event buttons are foldable:
 - It starts collapsed as a compact `≡` drag handle plus `+` expand toggle, so the full chain does not obstruct play.
 - Tap `+` to expand the event controls; tap `−` to collapse back to the compact handle.
-- The selected mode and on-screen position are saved locally and restored on the next service start.
+- Each group's on-screen position and the expanded/collapsed mode are saved locally and restored on the next service start.
 - Collapsing closes the extras row. Event buttons are ignored while collapsed.
 
 | Button | Event (GameEventType) |
@@ -39,8 +39,8 @@ Extras row (appears under the bar after tapping `E`): `WD` -> WIDE, `NB` -> NO_B
 - Tapping `E` again, tapping a main button, or waiting ~3 s with no pick also closes it.
 - Per-button lockout of ~0.8 s so an accidental double tap does not play two clips.
 - Toss choices: `BAT` -> TOSS_BAT and `BOWL` -> TOSS_BOWL. These are separate manual audio pools.
-- Wicket choices: `RUN` -> RUN_OUT, `BOWL` -> BOWLED_OUT, and `CATCH` -> CATCH_OUT. Each selection uses its own audio pool with the standard 20-clip maximum.
-- Dot-ball choices: `PITCH UP` -> PITCHED_UP_DOT and `BOUNCER` -> BOUNCER_DOT. Each selection uses a separate 20-clip pool; the existing DOT category remains available for game-event mappings.
+- Wicket choices: `RUN` -> RUN_OUT, `BOWL` -> BOWLED_OUT, and `CATCH` -> CATCH_OUT. Each selection uses its own audio pool with the standard 40-clip maximum.
+- Dot-ball choices: `PITCH UP` -> PITCHED_UP_DOT and `BOUNCER` -> BOUNCER_DOT. Each selection uses a separate 40-clip pool; the existing DOT category remains available for game-event mappings.
 - A new event, toss choice, refreshment selection, or preview immediately stops current playback and
   clears pending requests before starting the selected clip. If its pool is empty, the old clip is
   still stopped and the service reports that no audio is mapped.
@@ -52,7 +52,7 @@ Overlay button tap
   -> FloatingOverlayService (WindowManager overlay, plain Views)
   -> ACTION_PLAY_EVENT intent to CommentaryService (existing)
   -> AudioPlaybackEngine.playEventClip (latest selection replaces current and pending audio)
-  -> AudioPoolManager.chooseClip (existing: up to 20 clips/category, avoids last 3)
+  -> AudioPoolManager.chooseClip (existing: up to 40 clips/category, avoids last 3)
   -> Media3 playback with AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK (existing)
 ```
 Overlay taps go straight to the service. They do NOT go through GameEventReceiver, so the sender
@@ -74,7 +74,8 @@ Changed:
 - [x] Unit tests for mapping, ordering, extras behavior, timeout, and debounce.
 - [x] Compact/expanded toggle, collapsed-mode event suppression, and collapse-closes-extras behavior.
 - [x] Latest-selection-wins playback; `P` stop control; Toss Bat/Bowl submenu and Refreshment pool.
-- [x] Wicket submenu with independent Run Out, Bowled Out, and Catch Out audio pools; compact two-row layout.
+- [x] Wicket submenu with independent Run Out, Bowled Out, and Catch Out audio pools; compact split layout.
+- [x] Transparent text-only button groups with independent positions.
 - [x] Dot submenu with separate Pitched Up and Bouncer audio pools.
 - [x] Mapper UI exposes separate Toss · Bat, Toss · Bowl, Refreshment, Bowled Out, and Catch Out pools; Run Out uses its own existing pool.
 - [x] Build and run the test suite.

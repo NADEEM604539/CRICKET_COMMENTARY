@@ -37,11 +37,37 @@ class ClipSelectionPolicyTest {
 
     @Test
     fun allowsAnExistingClipEvenWhenPoolIsFull() {
-        assertTrue(ClipPoolPolicy.canAdd((1..20).map { it.toString() }.toSet(), "1", 20))
+        assertTrue(
+            ClipPoolPolicy.canAdd(
+                (1..AudioPoolManager.MAX_CLIPS_PER_EVENT).map { it.toString() }.toSet(),
+                "1",
+                AudioPoolManager.MAX_CLIPS_PER_EVENT,
+            ),
+        )
     }
 
     @Test
     fun rejectsANewClipWhenPoolIsFull() {
-        assertEquals(false, ClipPoolPolicy.canAdd((1..20).map { it.toString() }.toSet(), "21", 20))
+        assertEquals(
+            false,
+            ClipPoolPolicy.canAdd(
+                (1..AudioPoolManager.MAX_CLIPS_PER_EVENT).map { it.toString() }.toSet(),
+                "41",
+                AudioPoolManager.MAX_CLIPS_PER_EVENT,
+            ),
+        )
+    }
+
+    @Test
+    fun allowsTheFortiethClipAndCapsEachCategoryAtForty() {
+        val thirtyNineClips = (1..39).map { it.toString() }.toSet()
+        val fortyClips = (1..40).map { it.toString() }.toSet()
+
+        assertEquals(40, AudioPoolManager.MAX_CLIPS_PER_EVENT)
+        assertTrue(ClipPoolPolicy.canAdd(thirtyNineClips, "40", AudioPoolManager.MAX_CLIPS_PER_EVENT))
+        assertEquals(
+            false,
+            ClipPoolPolicy.canAdd(fortyClips, "41", AudioPoolManager.MAX_CLIPS_PER_EVENT),
+        )
     }
 }
